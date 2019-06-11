@@ -41,25 +41,25 @@ class VPO1Row:
     def __repr__(self):
         return repr(self.cells)
     
-class VPO1Header:
-    DESC = ['region', 'is_governmental', 'fulltime', 'section_name', 'units']
+class VPO1SheetHeader:
+    DESC = ['region', 'funded_by', 'time_involvement', 'name', 'units']
     DESC = dict(((x, i) for i, x in enumerate(DESC)))
     def __init__(self, rows: typing.List[VPO1Row], n_cols: int):
         
-        if len(rows) < len(VPO1Header.DESC):
-            raise VPO1ParsingError(
+        if len(rows) < len(VPO1SheetHeader.DESC):
+            raise VPO1Error(
                 'Expected at least {} rows in the header (for the traits) got {}'
-                .format(len(rows, len(VPO1Header.DESC)))
+                .format(len(rows, len(VPO1SheetHeader.DESC)))
             )
-        if not isinstance(rows[VPO1Header.DESC['units']][0], str):
-            raise VPO1ParsingError('Units of measurement misspecified')
-        if not 'ОКЕИ' in rows[VPO1Header.DESC['units']][0]:
-            raise VPO1ParsingError('Units of measurement misspecified')
+        if not isinstance(rows[VPO1SheetHeader.DESC['units']][0], str):
+            raise VPO1Error('Units of measurement misspecified')
+        if not 'ОКЕИ' in rows[VPO1SheetHeader.DESC['units']][0]:
+            raise VPO1Error('Units of measurement misspecified')
         
         
         TRANSFORMS = collections.defaultdict(lambda: (lambda x: x))
         # TRANSFORMS['units'] = lambda x: x.replace(STARTSWITH_UNITS, '')
-        for field, i in VPO1Header.DESC.items():
+        for field, i in VPO1SheetHeader.DESC.items():
             transform = TRANSFORMS[field]
             setattr(self, field, transform(rows[i][0]))
         
@@ -67,7 +67,7 @@ class VPO1Header:
             if x is None:
                 return ''
             return str(x)
-        table_header_start = len(VPO1Header.DESC) + 1
+        table_header_start = len(VPO1SheetHeader.DESC) + 1
         table_header = (
             (row[i] for row in rows[table_header_start:])
             for i in range(n_cols)
@@ -76,7 +76,7 @@ class VPO1Header:
         self.table_header = table_header
         self.n_cols = n_cols
         
-def vpo1_table(header: VPO1Header,
+def vpo1_table(header: VPO1SheetHeader,
                rows: typing.List[VPO1Row]) -> pd.DataFrame:
     index = [row[0] for row in rows]
     cols = header.table_header[1: ]
@@ -92,35 +92,35 @@ class VPO1Sheet:
             idx_col_numbers = next(i for i, x in enumerate(rows)
                                    if isinstance(x[0], float) and x[0] == 1)
         except StopIteration:
-            raise VPO1ParsingError('Invalid sheet. You probably should just skip it.')
+            raise VPO1Erro('Invalid sheet. You probably should just skip it.')
         n_cols = max(map(lambda r: r.n_cells, rows))
-        self.header = VPO1Header(rows[:idx_col_numbers], n_cols)
+        self.header = VPO1SheetHeader(rows[:idx_col_numbers], n_cols)
         self.table = vpo1_table(self.header, rows[idx_col_numbers + 1: ])
-        for field in VPO1Header.DESC:
+        for field in VPO1SheetHeader.DESC:
             setattr(self, field, getattr(self.header, field))
     @staticmethod
     def try_yield_parsed(rows):
         try:
             yield VPO1Sheet(rows)
-        except VPO1ParsingError:
+        except VPO1Error:
             pass
 
     
 class VPO1:
     def __init__(self, sheets: typing.Dict[str, typing.List[VPO1Row]]):
-        # pages = map(lambda name, rows: zip([name], VPO1Sheet.try_yield_parsed(rows)), sheets.items())
-        pages = (list(zip([name], VPO1Sheet.try_yield_parsed(rows))) for name, rows in sheets.items())
-        pages = itertools.chain.from_iterable(pages)
-        pages = list(pages)
-        self.names, self.pages = [n for n, p in pages], [p for n, p in pages]
-        if len(self.pages) == 0:
-            raise VPO1ParsingError('No pages could be parsed')
-        page0 = self.pages[0]
-        for field in VPO1Header.DESC:
-            setattr(self, field, getattr(page0, field))
+        # sheets = map(lambda name, rows: zip([name], VPO1Sheet.try_yield_parsed(rows)), sheets.items())
+        sheets = (list(zip([name], VPO1Sheet.try_yield_parsed(rows))) for name, rows in sheets.items())
+        sheets = itertools.chain.from_iterable(sheets)
+        sheets = list(sheets)
+        self.names, self.sheets = [n for n, p in sheets], [p for n, p in sheets]
+        if len(self.sheets) == 0:
+            raise VPO1Error('No sheets could be parsed')
+        page0 = self.sheets[0]
+        self.region = page0.region
+        self.time_involvement = page0.time_involvement
     @staticmethod
     def try_yield_parsed(sheets):
         try:
             yield VPO1(sheets)
-        except VPO1ParsingError:
+        except VPO1Error:
             pass

@@ -40,20 +40,29 @@ class VPO1Row:
         self.cells[cell_id] = value
     def __repr__(self):
         return repr(self.cells)
-    
+    def __len__(self):
+        return self.n_cells
+    def __iter__(self):
+        return (self[j] for j in range(self.n_cells))
+
+
 class VPO1SheetHeader:
     DESC = ['region', 'funded_by', 'time_involvement', 'name', 'units']
     DESC = dict(((x, i) for i, x in enumerate(DESC)))
-    def __init__(self, rows: typing.List[VPO1Row], n_cols: int):
+    def __init__(
+            self,
+            rows_traits: typing.List[VPO1Row],
+            rows_tableheader: typing.List[VPO1Row],
+            n_cols: int):
         
-        if len(rows) < len(VPO1SheetHeader.DESC):
+        if len(rows_traits) < len(VPO1SheetHeader.DESC):
             raise VPO1Error(
                 'Expected at least {} rows in the header (for the traits) got {}'
                 .format(len(rows, len(VPO1SheetHeader.DESC)))
             )
-        if not isinstance(rows[VPO1SheetHeader.DESC['units']][0], str):
+        if not isinstance(rows_traits[VPO1SheetHeader.DESC['units']][0], str):
             raise VPO1Error('Units of measurement misspecified')
-        if not 'ОКЕИ' in rows[VPO1SheetHeader.DESC['units']][0]:
+        if not 'ОКЕИ' in rows_traits[VPO1SheetHeader.DESC['units']][0]:
             raise VPO1Error('Units of measurement misspecified')
         
         
@@ -61,15 +70,14 @@ class VPO1SheetHeader:
         # TRANSFORMS['units'] = lambda x: x.replace(STARTSWITH_UNITS, '')
         for field, i in VPO1SheetHeader.DESC.items():
             transform = TRANSFORMS[field]
-            setattr(self, field, transform(rows[i][0]))
+            setattr(self, field, transform(rows_traits[i][0]))
         
         def table_header_transform(x):
             if x is None:
                 return ''
             return str(x)
-        table_header_start = len(VPO1SheetHeader.DESC) + 1
         table_header = (
-            (row[i] for row in rows[table_header_start:])
+            (row[i] for row in rows_tableheader)
             for i in range(n_cols)
         )
         table_header = [' '.join(map(table_header_transform, col)) for col in table_header]
@@ -86,16 +94,34 @@ def vpo1_table(header: VPO1SheetHeader,
                       columns=cols)
     return df
 
+def is_colnumbers_row(row):
+    return (
+            len(row) >= 2
+            and row[0] == 1
+            and row[1] == 2
+            and all(
+                isinstance(j, (int, float))
+                and j == int(j)
+                for j in row))
+
 class VPO1Sheet:
     def __init__(self, rows: typing.List[VPO1Row]):
+        cells_in_row = list(map(lambda r: r.n_cells, rows))
+        n_cols = max(cells_in_row)
         try:
-            idx_col_numbers = next(i for i, x in enumerate(rows)
-                                   if isinstance(x[0], float) and x[0] == 1)
+            end_sheet_traits = next(i for i, n_cells in enumerate(cells_in_row) if n_cells >= 2)
         except StopIteration:
-            raise VPO1Erro('Invalid sheet. You probably should just skip it.')
-        n_cols = max(map(lambda r: r.n_cells, rows))
-        self.header = VPO1SheetHeader(rows[:idx_col_numbers], n_cols)
-        self.table = vpo1_table(self.header, rows[idx_col_numbers + 1: ])
+            raise VPO1Error('Table header never begins')
+        try:
+            end_table_header = next(
+                    i for i, row
+                    in enumerate(rows[end_sheet_traits:], end_sheet_traits)
+                    if is_colnumbers_row(row))
+        except StopIteration:
+            raise VPO1Error('Cannot find the row with column numbers that signifies end of table header')
+        
+        self.header = VPO1SheetHeader(rows[:end_sheet_traits], rows[end_sheet_traits:end_table_header], n_cols)
+        self.table = vpo1_table(self.header, rows[end_table_header + 1: ])
         for field in VPO1SheetHeader.DESC:
             setattr(self, field, getattr(self.header, field))
     @staticmethod

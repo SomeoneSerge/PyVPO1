@@ -26,6 +26,10 @@ class VPO1Row:
             assert ref is not None
     @property
     def n_cells(self):
+        # TODO: remove
+        return self._n_cells
+    @property
+    def n_full_cells(self):
         return self._n_cells
     @property
     def n_atomic_cells(self):
@@ -35,12 +39,10 @@ class VPO1Row:
     def __getitem__(self, atomic_cell_id):
         cell_id = self.atomic_to_full[atomic_cell_id]
         return self.cells[cell_id]
-    def __setitem__(self, atomic_cell_id, value):
-        cell_id = self.atomic_to_full[atomic_cell_id]
-        self.cells[cell_id] = value
     def __repr__(self):
         return repr(self.cells)
     def __len__(self):
+        # TODO: return len(self.cells) for consistency with __getitem__
         return self.n_cells
     def __iter__(self):
         return (self[j] for j in range(self.n_cells))
